@@ -1,56 +1,78 @@
 using UnityEngine;
+using UnityEngine.AI;
 
-[RequireComponent(typeof(CharacterController))]
+[RequireComponent(typeof(NavMeshAgent))]
 public class PlayerController : MonoBehaviour
 {
-    public float walkSpeed = 2.5f;
-    public float runSpeed = 6f;
-    public float rotationSpeed = 10f;
-    public float gravity = -20f;
-    public Transform cameraTransform;
-    public bool firstPerson = false;
+    public float walkSpeed = 1.5f;
+    public float runSpeed = 5f;
+    public Camera cam;               // si está vacío usa la Main Camera
+    public GameObject clickMarker;   // opcional: marcador en el suelo
+    public bool firstPerson = false; // lo usa CameraController
 
-    CharacterController cc;
+    NavMeshAgent agent;
     Animator anim;
-    float verticalVelocity;
+    bool running;
+
+    public bool IsMoving
+    {
+        get { return agent != null && agent.velocity.sqrMagnitude > 0.05f; }
+    }
 
     void Start()
     {
-        cc = GetComponent<CharacterController>();
+        agent = GetComponent<NavMeshAgent>();
         anim = GetComponentInChildren<Animator>();
+        if (cam == null) cam = Camera.main;
+
+        agent.angularSpeed = 540f;
+        agent.acceleration = 20f;
+        agent.stoppingDistance = 0.2f;
+        agent.autoBraking = true;
+
+        if (clickMarker != null) clickMarker.SetActive(false);
     }
 
     void Update()
     {
-        float h = Input.GetAxisRaw("Horizontal");
-        float v = Input.GetAxisRaw("Vertical");
-        Vector3 input = new Vector3(h, 0, v).normalized;
+        if (Input.GetMouseButtonDown(0))
+            TryMoveToClick();
 
-        bool running = Input.GetKey(KeyCode.LeftShift);
-        float speed = running ? runSpeed : walkSpeed;
+        // Ocultar el marcador al llegar
+        if (clickMarker != null && clickMarker.activeSelf &&
+            !agent.pathPending && agent.remainingDistance <= agent.stoppingDistance + 0.1f)
+            clickMarker.SetActive(false);
 
-        Vector3 camForward = Vector3.Scale(cameraTransform.forward, new Vector3(1, 0, 1)).normalized;
-        Vector3 camRight = Vector3.Scale(cameraTransform.right, new Vector3(1, 0, 1)).normalized;
-        Vector3 move = camForward * input.z + camRight * input.x;
-
-        if (firstPerson)
-        {
-            transform.rotation = Quaternion.Euler(0, cameraTransform.eulerAngles.y, 0);
-        }
-        else if (move.magnitude > 0.1f)
-        {
-            Quaternion target = Quaternion.LookRotation(move);
-            transform.rotation = Quaternion.Slerp(transform.rotation, target, rotationSpeed * Time.deltaTime);
-        }
-
-        if (cc.isGrounded && verticalVelocity < 0) verticalVelocity = -2f;
-        verticalVelocity += gravity * Time.deltaTime;
-
-        Vector3 velocity = move * speed;
-        velocity.y = verticalVelocity;
-        cc.Move(velocity * Time.deltaTime);
-
-        float animValue = move.magnitude < 0.1f ? 0f : (running ? 1f : 0.5f);
+        // Animación: 0 = quieto, 0.5 = caminar, 1 = correr
+        float animValue = 0f;
+        if (IsMoving) animValue = running ? 1f : 0.5f;
         anim.SetFloat("Speed", animValue, 0.1f, Time.deltaTime);
+    }
+
+    void TryMoveToClick()
+    {
+        Ray ray = cam.ScreenPointToRay(Input.mousePosition);
+        RaycastHit[] hits = Physics.RaycastAll(ray, 300f, ~0, QueryTriggerInteraction.Ignore);
+        System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+
+        foreach (RaycastHit h in hits)
+        {
+            if (h.transform.IsChildOf(transform)) continue; // ignora a la propia chica
+
+            if (NavMesh.SamplePosition(h.point, out NavMeshHit navHit, 2f, NavMesh.AllAreas))
+            {
+                running = Input.GetKey(KeyCode.LeftShift);
+                agent.speed = running ? runSpeed : walkSpeed;
+                agent.isStopped = false;
+                agent.SetDestination(navHit.position);
+
+                if (clickMarker != null)
+                {
+                    clickMarker.SetActive(true);
+                    clickMarker.transform.position = navHit.position + Vector3.up * 0.05f;
+                }
+            }
+            break;
+        }
     }
 }

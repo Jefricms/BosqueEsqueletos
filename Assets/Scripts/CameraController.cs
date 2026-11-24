@@ -5,19 +5,22 @@ public class CameraController : MonoBehaviour
     public Transform target;        // HeadPoint
     public PlayerController player; // player
     public float distance = 3f;
+    public float minDistance = 1.5f;
+    public float maxDistance = 8f;
     public float sensitivity = 2f;
     public float firstPersonForwardOffset = 0.15f;
     public bool firstPerson = false;
 
     float yaw;
-    float pitch = 20f;
+    float pitch = 25f;
     float currentDist;
     Transform headBone;
 
     void Start()
     {
-        Cursor.lockState = CursorLockMode.Locked;
-        Cursor.visible = false;
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
+
         yaw = player.transform.eulerAngles.y;
         currentDist = distance;
 
@@ -41,14 +44,22 @@ public class CameraController : MonoBehaviour
             ApplyView();
         }
 
-        if (Input.GetKeyDown(KeyCode.Escape))
+        // Clic derecho mantenido: girar la cámara
+        if (Input.GetMouseButton(1))
         {
-            Cursor.lockState = CursorLockMode.None;
-            Cursor.visible = true;
+            yaw += Input.GetAxis("Mouse X") * sensitivity;
+            pitch -= Input.GetAxis("Mouse Y") * sensitivity;
         }
 
-        yaw += Input.GetAxis("Mouse X") * sensitivity;
-        pitch -= Input.GetAxis("Mouse Y") * sensitivity;
+        // Rueda del mouse: acercar / alejar (solo en tercera persona)
+        float scroll = Input.mouseScrollDelta.y;
+        if (!firstPerson && Mathf.Abs(scroll) > 0.01f)
+            distance = Mathf.Clamp(distance - scroll * 0.5f, minDistance, maxDistance);
+
+        // En primera persona, la vista sigue hacia donde camina la chica
+        if (firstPerson && player.IsMoving)
+            yaw = Mathf.LerpAngle(yaw, player.transform.eulerAngles.y, 6f * Time.deltaTime);
+
         pitch = Mathf.Clamp(pitch, firstPerson ? -70f : 5f, 70f);
     }
 
