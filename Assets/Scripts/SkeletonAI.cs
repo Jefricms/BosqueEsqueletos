@@ -1,6 +1,5 @@
 using UnityEngine;
 using UnityEngine.AI;
-using UnityEngine.SceneManagement;
 using System.Collections;
 
 public class SkeletonAI : MonoBehaviour
@@ -8,25 +7,27 @@ public class SkeletonAI : MonoBehaviour
     public float riseTime = 2f;
     public float attackDistance = 1.5f;
     public float chaseSpeed = 4.5f;
-    public float repathInterval = 0.2f;   // NUEVO
+    public float repathInterval = 0.2f;
+    public float attackCooldown = 1f;
 
-    // NUEVO: hashes calculados una sola vez
     static readonly int AttackHash = Animator.StringToHash("Attack");
     static readonly int SpeedHash = Animator.StringToHash("Speed");
 
     NavMeshAgent agent;
     Animator anim;
     Transform player;
+    PlayerHealth playerHealth;
     bool ready = false;
-    bool caught = false;
-    float nextRepath = 0f;                // NUEVO
-    float attackDistSqr;                  // NUEVO
+    float nextRepath = 0f;
+    float nextAttack = 0f;
+    float attackDistSqr;
 
     IEnumerator Start()
     {
         agent = GetComponent<NavMeshAgent>();
         anim = GetComponentInChildren<Animator>();
         player = GameObject.FindWithTag("Player").transform;
+        playerHealth = player.GetComponentInParent<PlayerHealth>();
         attackDistSqr = attackDistance * attackDistance;
 
         agent.enabled = false;
@@ -49,13 +50,21 @@ public class SkeletonAI : MonoBehaviour
 
     void Update()
     {
-        if (!ready || caught) return;
+        if (!ready) return;
+
+        // Si el jugador ya murió, el esqueleto se detiene
+        if (playerHealth != null && playerHealth.IsDead)
+        {
+            agent.isStopped = true;
+            anim.SetBool(AttackHash, false);
+            anim.SetFloat(SpeedHash, 0f);
+            return;
+        }
 
         float distSqr = (transform.position - player.position).sqrMagnitude;
 
         if (distSqr > attackDistSqr)
         {
-            // Recalcular ruta solo cada 0.2 s
             if (Time.time >= nextRepath)
             {
                 agent.isStopped = false;
@@ -68,14 +77,14 @@ public class SkeletonAI : MonoBehaviour
         {
             agent.isStopped = true;
             anim.SetBool(AttackHash, true);
-            caught = true;
-            Invoke(nameof(Restart), 1.5f);
-        }
-        anim.SetFloat(SpeedHash, agent.velocity.magnitude);
-    }
 
-    void Restart()
-    {
-        SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+            if (Time.time >= nextAttack && playerHealth != null)
+            {
+                playerHealth.TakeDamage();
+                nextAttack = Time.time + attackCooldown;
+            }
+        }
+
+        anim.SetFloat(SpeedHash, agent.velocity.magnitude);
     }
 }
